@@ -6,19 +6,19 @@ class IterativeOptimizerBase(object):
 
     """
     :param parameters: list or tuple of Theano variables 
-        that we want to optimize iteratively.  If we're minimizing f(x), then
+        that we want to optimize iteratively.  If we are minimizing f(x), then
         together, these variables represent 'x'.  Typically these are shared
         variables and their values are the initial values for the minimization
         algorithm.
 
-    :param cost: scalar-valued Theano variable that computes an exact or noisy estimate of
-        cost  (what are the conditions on the noise?).  Some algorithms might
-        need an exact cost, some algorithms might ignore the cost if the
-        gradients are given.
+    :param cost: scalar-valued Theano variable that computes an exact or noisy
+        estimate of cost (what are the conditions on the noise?).
+        Some algorithms might need an exact cost, some algorithms might ignore
+        the cost if the gradients are given.
 
-    :param gradients: list or tuple of Theano variables representing the gradients on
-        the corresponding parameters.  These default to tensor.grad(cost,
-        parameters).
+    :param gradients: list or tuple of Theano variables representing the
+        gradients on the corresponding parameters.  These default to
+        tensor.grad(cost, parameters).
 
     :param stop: a shared variable (scalar integer) that (if provided) will be
         updated to say when the iterative minimization algorithm has finished
@@ -43,17 +43,18 @@ class IterativeOptimizerBase(object):
 
 
 def dict_merge(a, b):
-    """Return the union of dictionaries `a` and `b`
+    """
+    Return the union of dictionaries `a` and `b`.
     
-    This function will fail if `a` and `b` map any one key to different objects (as determined
-    by __eq__).
+    This function will raise a KeyError if `a` and `b` map any one key to
+    different objects (as determined by __eq__).
 
-    This function does not modify `a` and `b`, but will return something like a shallow copy of
-    each.
+    This function does not modify `a` nor `b`, but will return something like
+    a shallow copy of each.
     """
     r = dict(a)
-    for (k,v) in b.iteritems():
-        if k in r and v != r[k]:
+    for (k, v) in b.iteritems():
+        if k in a and v != a[k]:
             raise KeyError(k)
         r[k] = v
     return r

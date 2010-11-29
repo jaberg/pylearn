@@ -1,3 +1,5 @@
+from itertools import izip
+
 from theano import tensor
 
 from .base import IterativeOptimizerBase, dict_merge
@@ -38,15 +40,14 @@ class Basic(IterativeOptimizerBase):
 
         if l_step_size is None:
             step_size = [step_size for p in parameters]
-        else:
-            if len(step_size) != len(parameters):
-                raise ValueError(('number of step_sizes (%i)'
-                    ' does not match number of parameters (%i)')%(
-                        len(step_size), len(parameters)))
+        elif len(step_size) != len(parameters):
+            raise ValueError('number of step_sizes (%i)'
+                             ' does not match number of parameters (%i)' %
+                             (len(step_size), len(parameters)))
 
         learning_updates = dict(
                 [(p, p - s * g) 
-                    for (p, g, s) in zip(parameters, gradients, step_size)])
+                    for (p, g, s) in izip(parameters, gradients, step_size)])
 
         if updates:
             rval = dict_merge(learning_updates, updates)
