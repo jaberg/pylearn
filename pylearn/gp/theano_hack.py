@@ -1,10 +1,13 @@
 import theano
 import theano.tensor as TT
 
-from theano_linalg import solve, cholesky
+
+import numpy
+
+from theano_linalg import solve, cholesky, diag, matrix_inverse, det
 
 observation_noise=.01
-lenscale=1.1
+lenscale=0.1
 
 def rbf_kernel(x0, x1, l=1.0):
     d = ((x0**2).sum(axis=1).dimshuffle(0,'x')
@@ -35,7 +38,15 @@ gpr_fn = theano.function(
         [x_train, y_train, x_test],
         [mean_test, var_test])
 
-import numpy
+#Marginal likelihood
+lik = ( -0.5 * TT.dot(y_train, TT.dot(matrix_inverse(K), y_train))
+    - 0.5 * TT.log(det(K)) 
+    - x_train.shape[1] / 2.0 * TT.log(2*numpy.pi))
+
+gpr_lik = theano.function([x_train,y_train],
+        lik)
+
+
 
 rng = numpy.random.RandomState(234)
 x = (numpy.arange(10) * 1.0).reshape(10,1)
@@ -45,6 +56,8 @@ xstar = (numpy.arange(0,10,0.1)).reshape(100,1)
 
 meanstar, Vfstar = gpr_fn(x,y,xstar)
 stddev = numpy.sqrt(Vfstar)
+
+print 'likelihood', gpr_lik(x,y)
 
 import matplotlib.pyplot as plt
 plt.scatter(x[:,0],y_mean)
