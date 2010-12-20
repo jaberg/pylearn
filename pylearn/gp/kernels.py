@@ -226,6 +226,7 @@ class ProductKernel(object):
 #
 #TODO: make an Op-friendly version of the minimize_nll function
 #      that does not update shared variables by side-effect
+#TODO: Talk to Olivier about how to make this a learner
 
 class GPR_math(object):
     """
