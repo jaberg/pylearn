@@ -1,6 +1,7 @@
 import numpy
 import matplotlib.pyplot as plt
 import kernels
+import theano
 
 N_train_pts = 8
 
@@ -21,7 +22,7 @@ if 0:
         kernels.SquaredExponentialKernel.alloc(),
         kernels.ExponentialKernel.alloc()
             ])
-elif 1:
+elif 0:
     kernel = kernels.ConvexMixtureKernel.alloc(
             kernels = [
                 kernels.SquaredExponentialKernel.alloc(),
@@ -30,7 +31,7 @@ elif 1:
 else:
     kernel = kernels.ExponentialKernel.alloc()
 # fit the kernels
-gpr = kernels.GPR_math(kernel, x, y, var_y=0.2)
+gpr = kernels.GPR_math(kernel, theano.shared(x), theano.shared(y), var_y=0.2)
 gpr.minimize_nll(maxiter=50)
 meanstar, Vfstar = gpr.mean_variance(x_new)
 # get the predictions at new points
