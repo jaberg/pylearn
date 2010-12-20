@@ -3,7 +3,7 @@ import scipy.optimize
 #import scipy.linalg
 import theano
 import theano.tensor as TT
-from theano_linalg import solve, cholesky, diag, matrix_inverse, det
+from theano_linalg import solve, cholesky, diag, matrix_inverse, det, PSD_hint
 
 #TODO: Match names to scikits.learn
 
@@ -108,6 +108,7 @@ class ConvexMixtureKernel(object):
     
         kernels -
         element_ranges - each kernel looks at these elements (default ALL)
+        feature_names - 
         raw_coefs - 
         coefs - 
 
@@ -118,10 +119,20 @@ class ConvexMixtureKernel(object):
         coefs = self.coefs_f()
         ks = [str(k) for k in self.kernels]
         return 'ConvexMixtureKernel{%s}'%(','.join(['%s*%s'%(str(c),s) for c,s in zip(coefs, ks)]))
+    def summary(self):
+        import StringIO
+        ss = StringIO.StringIO()
+        coefs = self.coefs_f()
+        print >> ss,  "ConvexMixtureKernel:"
+        for c, k,fname in zip(coefs,self.kernels, self.feature_names):
+            print >> ss,  "  %f * %s '%s'" %(c, str(k), fname)
+        return ss.getvalue()
     @classmethod
-    def alloc(cls, kernels, coefs=None, element_ranges=None):
+    def alloc(cls, kernels, coefs=None, element_ranges=None, feature_names=None):
         if coefs is None:
             raw_coefs = theano.shared(numpy.zeros(len(kernels)))
+            print "HAAACK"
+            raw_coefs.get_value(borrow=True)[0] += 1 
         else:
             raise NotImplementedError()
         coefs=TT.nnet.softmax(raw_coefs.dimshuffle('x',0))[0]
@@ -132,6 +143,7 @@ class ConvexMixtureKernel(object):
                 coefs_f = coefs_f, #DEBUG
                 raw_coefs = raw_coefs,
                 element_ranges=element_ranges,
+                feature_names = feature_names,
                 )
 
     def params(self):
@@ -146,7 +158,7 @@ class ConvexMixtureKernel(object):
             Ks = [kernel.K(x,y) for kernel in  self.kernels]
         else:
             assert len(self.element_ranges) == len(self.kernels)
-            Ks = [kernel.K(x[er[0]:er[1]],y[er[0]:er[1]])
+            Ks = [kernel.K(x[:,er[0]:er[1]],y[:,er[0]:er[1]])
                     for (kernel,er) in zip(self.kernels, self.element_ranges)]
         # stack them up
         Kstack = TT.stack(*Ks)
@@ -154,6 +166,59 @@ class ConvexMixtureKernel(object):
         # and sum down to one kernel
         K = TT.sum(self.coefs.dimshuffle(0,'x','x') * Kstack,
                 axis=0)
+        return K
+
+class ProductKernel(object):
+    """
+
+    Attributes:
+    
+        kernels -
+        element_ranges - each kernel looks at these elements (default ALL)
+        feature_names - 
+        raw_coefs - 
+        coefs - 
+
+    """
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+    def __str__(self):
+        ks = [str(k) for k in self.kernels]
+        return 'ProductKernel{%s}'%(','.join(['%s*%s'%(str(c),s) for c,s in zip(coefs, ks)]))
+    def summary(self):
+        import StringIO
+        ss = StringIO.StringIO()
+        print >> ss,  "ProductKernel:"
+        for k,fname in zip(self.kernels, self.feature_names):
+            print >> ss,  "  %s '%s'" %(str(k), fname)
+        return ss.getvalue()
+    @classmethod
+    def alloc(cls, kernels, element_ranges=None, feature_names=None):
+        return cls(
+                kernels=kernels,
+                element_ranges=element_ranges,
+                feature_names = feature_names,
+                )
+
+    def params(self):
+        rval = []
+        for k in self.kernels:
+            rval.extend(k.params())
+        return rval
+
+    def K(self, x, y):
+        # get the kernel matrix from each sub-kernel
+        if self.element_ranges is None:
+            Ks = [kernel.K(x,y) for kernel in  self.kernels]
+        else:
+            assert len(self.element_ranges) == len(self.kernels)
+            Ks = [kernel.K(x[:,er[0]:er[1]],y[:,er[0]:er[1]])
+                    for (kernel,er) in zip(self.kernels, self.element_ranges)]
+        # stack them up
+        Kstack = TT.stack(*Ks)
+        # multiply by coefs
+        # and sum down to one kernel
+        K = TT.prod(Kstack, axis=0)
         return K
 
 #
@@ -189,6 +254,7 @@ class GPR_math(object):
         n = y.shape[0]
         K = self.kernel.K(self.x, self.x)
         rK = K + self.var_y * TT.eye(self.y.shape[0])
+        rK = PSD_hint(rK)
 
         nll = ( 0.5 * dots(y, matrix_inverse(rK), y)
             + 0.5 * TT.log(det(rK)) 
@@ -198,6 +264,7 @@ class GPR_math(object):
     def s_mean(self, x):
         K = self.kernel.K(self.x, self.x)
         rK = K + self.var_y * TT.eye(self.y.shape[0])
+        rK = PSD_hint(rK)
         alpha = TT.dot(matrix_inverse(rK), self.y)
 
         K_x = self.kernel.K(self.x, x)
@@ -207,6 +274,7 @@ class GPR_math(object):
     def s_variance(self, x):
         K = self.kernel.K(self.x, self.x)
         rK = K + self.var_y * TT.eye(self.y.shape[0])
+        rK = PSD_hint(rK)
         L = cholesky(rK)
         K_x = self.kernel.K(self.x, x)
         v = solve(L, K_x)
@@ -222,9 +290,10 @@ class GPR_math(object):
         Side effect: chooses optimal kernel parameters.
         """
 
-        cost = self.s_nll() + 0.001 * sum([(p**2).sum() for p in self.kernel.params()])
+        cost = self.s_nll() + 0.1 * sum([(p**2).sum() for p in self.kernel.params()])
 
         nll = theano.function([], cost)
+        #theano.printing.debugprint(nll)
         dnll_dparams = theano.function([], TT.grad(cost, self.kernel.params()))
         params = self.kernel.params()
         def get_pt():
@@ -242,27 +311,31 @@ class GPR_math(object):
                 p.set_value(pt[i:i+size].reshape(shape))
                 i += size
             assert i == len(pt)
-            print self.kernel
-            print cost.dtype
+            print self.kernel.summary()
+
         def f(pt):
-            print 'f', pt
+            #print 'f', pt
             set_pt(pt)
             return nll()
         def df(pt):
-            print 'df', pt
+            #print 'df', pt
             set_pt(pt)
             dparams = dnll_dparams()
             rval = []
             for dp in dparams:
                 rval.extend(dp.flatten())
             rval =  numpy.asarray(rval)
-            print numpy.sqrt((rval**2).sum())
+            #print numpy.sqrt((rval**2).sum())
             return rval
         start_pt = get_pt()
         # WEIRD: I was using fmin_ncg here
         #        until I used a low multiplier on the sum-squared-error regularizer
         #        on the 'cost' above, which threw ncg into an inf loop!?
-        best_pt = scipy.optimize.fmin_cg(f, start_pt, df, maxiter=maxiter)
+        #best_pt = scipy.optimize.fmin_cg(f, start_pt, df, maxiter=maxiter, epsilon=.02)
+        best_pt, best_value, best_d = scipy.optimize.fmin_l_bfgs_b(f, start_pt, df, maxfun=3*maxiter, 
+                bounds=[(-10, 10)]*len(start_pt))
+        print 'best_value', best_value
+
         set_pt(best_pt)
 
     def mean(self, x):
