@@ -13,7 +13,11 @@ import theano
 from pylearn.datasets.utlc import load_ndarray_dataset, load_sparse_dataset
 
 # Local imports
-from auc import embed
+try:
+    from auc import embed
+except ImportError:
+    import sys
+    print >> sys.stderr, 'pylearn2.utils.utlc: where is the auc module?'
 
 ##################################################
 # Shortcuts and auxiliary functions
